@@ -1,49 +1,75 @@
 "use client";
 
+import { useTheme } from "@/components/ThemeContext";
+import { getFlipCardRingOffsetClass } from "@/lib/theme";
+import type { ReactNode } from "react";
+
 type Props = {
   question: string;
-  answer: string;
+  /** All shown together on the back when the card is turned. */
+  answers: string[];
   flipped: boolean;
   onFlip: () => void;
+  /** Shown below the card when `flipped` (e.g. grade buttons). Replaces the Turn button. */
+  revealActions?: ReactNode;
 };
 
-export function FlipCard({ question, answer, flipped, onFlip }: Props) {
+export function FlipCard({ question, answers, flipped, onFlip, revealActions }: Props) {
+  const { theme } = useTheme();
+  const flipRing = getFlipCardRingOffsetClass(theme);
+
   return (
     <div className="card-flip-perspective mx-auto w-full max-w-lg">
       <div
-        className={`card-flip-inner relative aspect-[4/3] w-full rounded-2xl shadow-lg ${flipped ? "is-flipped" : ""}`}
+        className={`card-flip-inner relative aspect-[4/3] w-full rounded-3xl shadow-2xl shadow-black/30 ring-1 ring-slate-500/15 ${flipped ? "is-flipped" : ""}`}
       >
         <div
-          className="card-flip-face absolute inset-0 flex flex-col rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+          className="card-flip-face absolute inset-0 flex flex-col rounded-3xl border border-slate-600/70 bg-slate-900 p-6 shadow-inner"
           style={{ backfaceVisibility: "hidden" }}
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Question</p>
-          <p className="mt-3 flex-1 text-lg leading-relaxed text-slate-900 whitespace-pre-wrap break-words">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Question</p>
+          <p className="mt-3 flex-1 text-lg leading-relaxed text-slate-100 whitespace-pre-wrap break-words">
             {question || "—"}
           </p>
         </div>
         <div
-          className="card-flip-face card-flip-back absolute inset-0 flex flex-col overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-6 shadow-sm"
+          className="card-flip-face card-flip-back absolute inset-0 flex flex-col overflow-y-auto rounded-3xl border border-slate-600/70 bg-slate-800/95 p-6 shadow-inner"
           style={{ backfaceVisibility: "hidden" }}
         >
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Question</p>
-          <p className="mt-1 text-sm leading-relaxed text-slate-600 whitespace-pre-wrap break-words">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Question</p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
             {question || "—"}
           </p>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Answer</p>
-          <p className="mt-1 flex-1 text-lg leading-relaxed text-slate-900 whitespace-pre-wrap break-words">
-            {answer || "—"}
+          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-400">
+            {answers.length > 1 ? "Answers" : "Answer"}
           </p>
+          <div className="mt-1 flex flex-1 flex-col gap-2">
+            {answers.length > 0 ? (
+              answers.map((a, i) => (
+                <p
+                  key={i}
+                  className="text-lg leading-relaxed text-slate-100 whitespace-pre-wrap break-words"
+                >
+                  {a}
+                </p>
+              ))
+            ) : (
+              <p className="text-lg text-slate-100">—</p>
+            )}
+          </div>
         </div>
       </div>
-      <div className="mt-6 flex justify-center">
-        <button
-          type="button"
-          onClick={onFlip}
-          className="rounded-full bg-blue-600 px-8 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-        >
-          Turn
-        </button>
+      <div className="mt-6 flex min-h-[48px] flex-col items-center justify-center gap-3">
+        {!flipped && (
+          <button
+            type="button"
+            onClick={onFlip}
+            className={`rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-8 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition hover:from-blue-400 hover:to-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400 active:scale-[0.98] ${flipRing}`}
+          >
+            Turn
+          </button>
+        )}
+        {flipped && revealActions}
       </div>
     </div>
   );

@@ -1,25 +1,60 @@
 @import "tailwindcss";
+@import "./theme-overrides.css";
 
 @theme {
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
-  --color-flip-ink: #0f172a;
-  --color-flip-paper: #f8fafc;
-  --color-flip-accent: #2563eb;
-  --color-flip-mute: #64748b;
-  --color-flip-card: #ffffff;
-  --color-flip-border: #e2e8f0;
+  --color-flip-ink: #e2e8f0;
+  --color-flip-paper: #0f172a;
+  --color-flip-accent: #60a5fa;
+  --color-flip-mute: #94a3b8;
+  --color-flip-card: #1e293b;
+  --color-flip-border: #334155;
 }
 
 @layer base {
   html {
     @apply antialiased;
   }
-  body {
-    @apply min-h-dvh text-[var(--color-flip-ink)] bg-slate-100;
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  /* Default: soft radial glow + base tone */
+  html[data-theme="dark"] body,
+  html:not([data-theme]) body {
+    @apply min-h-dvh text-slate-100;
+    background-color: #020617;
+    background-image: radial-gradient(90% 55% at 50% 0%, rgb(30 64 175 / 0.18) 0%, transparent 50%),
+      linear-gradient(180deg, #020617 0%, #0a0f1a 100%);
+  }
+  html[data-theme="light"] body,
+  html[data-theme="solar"] body {
+    @apply min-h-dvh;
+  }
+  ::selection {
+    @apply bg-blue-500/35 text-white;
+  }
+  html[data-theme="light"] ::selection {
+    @apply bg-blue-200 text-slate-900;
   }
 }
 
 @layer components {
+  /** Elevated content blocks (decks, forms, modals) — keep slate utilities so theme overrides work */
+  .ui-elevate {
+    @apply rounded-3xl border border-slate-600/50 bg-slate-900/70 shadow-2xl shadow-black/25 ring-1 ring-slate-500/20 backdrop-blur-sm;
+  }
+  .ui-backdrop {
+    @apply fixed inset-0 z-50 flex items-end justify-center bg-slate-950/65 p-4 backdrop-blur-sm sm:items-center;
+  }
+  .ui-input {
+    @apply rounded-2xl border border-slate-600/80 bg-slate-800/50 px-3 py-2 text-slate-100 shadow-sm transition placeholder:text-slate-400 focus:border-blue-500/70 focus:outline-none focus:ring-2 focus:ring-blue-500/25;
+  }
+  .ui-btn-primary {
+    @apply rounded-xl bg-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400 active:scale-[0.98];
+  }
+  .ui-btn-ghost {
+    @apply rounded-xl border border-slate-600/80 bg-slate-800/50 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-800/80 active:scale-[0.98];
+  }
   .card-flip-perspective {
     perspective: 1200px;
   }

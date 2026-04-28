@@ -72,7 +72,7 @@ function mapHeaderIndices(header: string[]): { q: number; a: number } {
 export function parseCardCSV(
   text: string,
 ):
-  | { ok: true; rows: { question: string; answer: string }[]; warnings: string[] }
+  | { ok: true; rows: { question: string; answers: string[] }[]; warnings: string[] }
   | { ok: false; error: string } {
   const rawLines = text
     .split(/\r?\n/)
@@ -87,36 +87,42 @@ export function parseCardCSV(
 
   let startRow = 0;
   let qCol = 0;
-  let aCol = 1;
   if (isHeaderRow(lines[0]!)) {
     const m = mapHeaderIndices(lines[0]!);
     qCol = m.q;
-    aCol = m.a;
     startRow = 1;
   }
 
-  if (qCol === aCol && lines[0]!.length >= 2) {
-    qCol = 0;
-    aCol = 1;
-  }
-
-  const rows: { question: string; answer: string }[] = [];
+  const rows: { question: string; answers: string[] }[] = [];
   for (let i = startRow; i < lines.length; i++) {
     const parts = lines[i]!;
     if (parts.length < 2) {
-      warnings.push(`Line ${i + 1}: skipped (need at least 2 columns).`);
+      warnings.push(
+        `Line ${i + 1}: skipped (need a question column and at least one answer column).`,
+      );
       continue;
     }
     const q = (parts[qCol] ?? "").trim();
-    const a = (parts[aCol] ?? "").trim();
-    if (q === "" && a === "") continue;
-    rows.push({ question: q, answer: a });
+    const answers = parts
+      .map((c, j) => (j === qCol ? null : c.trim()))
+      .filter((c): c is string => c !== null && c.length > 0);
+    if (q === "" && answers.length === 0) continue;
+    if (q === "") {
+      warnings.push(`Line ${i + 1}: skipped (question is empty).`);
+      continue;
+    }
+    if (answers.length === 0) {
+      warnings.push(`Line ${i + 1}: skipped (need at least one answer).`);
+      continue;
+    }
+    rows.push({ question: q, answers });
   }
 
   if (rows.length === 0) {
     return {
       ok: false,
-      error: "No rows imported. Use two columns (e.g. question,answer) or front,back with a header row.",
+      error:
+        "No rows imported. Use a question column and one or more answer columns (e.g. question,answer or question,a1,a2), or add a header row (question,answer,…).",
     };
   }
   return { ok: true, rows, warnings };
