@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     );
   }
   const key = appDataKeyForUserId(auth.session.userId);
-  const raw = await auth.r.get<string>(key);
+  const raw = await auth.r.get(key);
   if (raw == null) {
     return jsonResponse(
       { ok: true, data: null },

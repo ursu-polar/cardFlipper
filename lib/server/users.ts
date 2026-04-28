@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { Redis } from "@upstash/redis";
+import type { AppKv } from "@/lib/server/kv";
 
 const USERS_KEY = "cardflip:users";
 const SESS_PREFIX = "cardflip:sess:";
@@ -31,17 +31,17 @@ function readUsersMap(raw: unknown): UsersMap {
   return {};
 }
 
-export async function getUsersMap(r: Redis): Promise<UsersMap> {
+export async function getUsersMap(r: AppKv): Promise<UsersMap> {
   const raw = await r.get(USERS_KEY);
   return readUsersMap(raw);
 }
 
-export async function setUsersMap(r: Redis, map: UsersMap): Promise<void> {
+export async function setUsersMap(r: AppKv, map: UsersMap): Promise<void> {
   await r.set(USERS_KEY, JSON.stringify(map));
 }
 
 /** Admin account exists with the demo password. */
-export async function ensureDefaultAdminUser(r: Redis): Promise<void> {
+export async function ensureDefaultAdminUser(r: AppKv): Promise<void> {
   const map = await getUsersMap(r);
   if (!map[ADMIN_USERNAME]) {
     map[ADMIN_USERNAME] = { id: randomUUID(), password: ADMIN_PASSWORD };
@@ -76,7 +76,7 @@ export function newSessionToken(): string {
 }
 
 export async function createSessionForUser(
-  r: Redis,
+  r: AppKv,
   usernameNorm: string,
   user: UserRow,
 ): Promise<string> {
@@ -91,7 +91,7 @@ export async function createSessionForUser(
 }
 
 export async function verifyPassword(
-  r: Redis,
+  r: AppKv,
   username: string,
   password: string,
 ): Promise<UserRow | null> {
@@ -104,7 +104,7 @@ export async function verifyPassword(
 }
 
 export async function registerUser(
-  r: Redis,
+  r: AppKv,
   username: string,
   password: string,
 ): Promise<{ ok: true; user: UserRow; usernameNorm: string } | { ok: false; error: string }> {
@@ -130,7 +130,7 @@ export async function registerUser(
 }
 
 export async function deleteUserByUsername(
-  r: Redis,
+  r: AppKv,
   targetUsername: string,
   requesterNorm: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -153,11 +153,11 @@ export async function deleteUserByUsername(
 }
 
 export async function getSessionPayload(
-  r: Redis,
+  r: AppKv,
   token: string,
 ): Promise<SessionPayload | null> {
   if (!isSessionTokenForm(token)) return null;
-  const raw = await r.get<string>(sessionKey(token));
+  const raw = await r.get(sessionKey(token));
   if (raw == null) return null;
   let p: unknown;
   try {
@@ -178,7 +178,7 @@ export async function getSessionPayload(
   };
 }
 
-export async function deleteSession(r: Redis, token: string): Promise<void> {
+export async function deleteSession(r: AppKv, token: string): Promise<void> {
   if (isSessionTokenForm(token)) await r.del(sessionKey(token));
 }
 

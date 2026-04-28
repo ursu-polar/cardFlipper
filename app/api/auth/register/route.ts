@@ -1,17 +1,11 @@
-import { getRedisOrNull } from "@/lib/server/redis";
+import { getAppKv } from "@/lib/server/kv";
 import { createSessionForUser, registerUser } from "@/lib/server/users";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const r = getRedisOrNull();
-  if (!r) {
-    return NextResponse.json(
-      { ok: false, error: "server-storage-unavailable" },
-      { status: 503, headers: { "cache-control": "no-store" } },
-    );
-  }
+  const r = getAppKv();
   let body: { username?: string; password?: string };
   try {
     body = (await request.json()) as { username?: string; password?: string };

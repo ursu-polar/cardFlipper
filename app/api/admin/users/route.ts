@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { requireSession } from "@/lib/server/authRequest";
-import { getRedisOrNull } from "@/lib/server/redis";
 import {
   deleteUserByUsername,
   getUsersMap,
@@ -24,11 +23,7 @@ export async function GET(request: NextRequest) {
   if (!auth.session.isAdmin) {
     return jsonResponse({ error: "forbidden" }, { status: 403 });
   }
-  const r = getRedisOrNull();
-  if (!r) {
-    return jsonResponse({ error: "server-storage-unavailable" }, { status: 503 });
-  }
-  const map = await getUsersMap(r);
+  const map = await getUsersMap(auth.r);
   return jsonResponse({ users: listUsersWithPasswords(map) });
 }
 
@@ -40,10 +35,7 @@ export async function POST(request: NextRequest) {
   if (!auth.session.isAdmin) {
     return jsonResponse({ error: "forbidden" }, { status: 403 });
   }
-  const r = getRedisOrNull();
-  if (!r) {
-    return jsonResponse({ error: "server-storage-unavailable" }, { status: 503 });
-  }
+  const r = auth.r;
   let body: { username?: string; password?: string };
   try {
     body = (await request.json()) as { username?: string; password?: string };
@@ -76,10 +68,7 @@ export async function DELETE(request: NextRequest) {
   if (!auth.session.isAdmin) {
     return jsonResponse({ error: "forbidden" }, { status: 403 });
   }
-  const r = getRedisOrNull();
-  if (!r) {
-    return jsonResponse({ error: "server-storage-unavailable" }, { status: 503 });
-  }
+  const r = auth.r;
   let body: { username?: string };
   try {
     body = (await request.json()) as { username?: string };

@@ -34,13 +34,8 @@ export function LoginPanel() {
     return (
       <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4">
         <div className="ui-elevate p-6 text-center">
-          <h1 className="text-lg font-semibold text-slate-100">Server storage unavailable</h1>
-          <p className="mt-2 text-sm text-slate-400">
-            Connect <strong>Upstash Redis</strong> to this Vercel project and set
-            <code className="mx-1 rounded bg-slate-800 px-1 text-xs">UPSTASH_REDIS_REST_URL</code> and
-            <code className="mx-1 rounded bg-slate-800 px-1 text-xs">UPSTASH_REDIS_REST_TOKEN</code>, then
-            redeploy.
-          </p>
+          <h1 className="text-lg font-semibold text-slate-100">Server unavailable</h1>
+          <p className="mt-2 text-sm text-slate-400">Could not reach the app. Try again in a moment.</p>
         </div>
       </div>
     );

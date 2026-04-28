@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { getRedisOrNull } from "@/lib/server/redis";
+import { getAppKv, type AppKv } from "@/lib/server/kv";
 import { getSessionPayload, isSessionTokenForm, type SessionPayload } from "@/lib/server/users";
 
 export function getSessionTokenFromRequest(request: Request): string {
@@ -11,12 +11,9 @@ export function getSessionTokenFromRequest(request: Request): string {
 }
 
 export async function requireSession(request: NextRequest): Promise<
-  { ok: true; r: NonNullable<ReturnType<typeof getRedisOrNull>>; session: SessionPayload; token: string } | { ok: false; status: number; error: string }
+  { ok: true; r: AppKv; session: SessionPayload; token: string } | { ok: false; status: number; error: string }
 > {
-  const r = getRedisOrNull();
-  if (!r) {
-    return { ok: false, status: 503, error: "server-storage-unavailable" };
-  }
+  const r = getAppKv();
   const token = getSessionTokenFromRequest(request);
   if (!isSessionTokenForm(token)) {
     return { ok: false, status: 401, error: "unauthorized" };
