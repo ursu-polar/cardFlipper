@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-flip-ink: #0f172a;
+  --color-flip-paper: #f8fafc;
+  --color-flip-accent: #2563eb;
+  --color-flip-mute: #64748b;
+  --color-flip-card: #ffffff;
+  --color-flip-border: #e2e8f0;
+}
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply min-h-dvh text-[var(--color-flip-ink)] bg-slate-100;
+  }
+}
+
+@layer components {
+  .card-flip-perspective {
+    perspective: 1200px;
+  }
+  .card-flip-inner {
+    transform-style: preserve-3d;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .card-flip-inner.is-flipped {
+    transform: rotateY(180deg);
+  }
+  .card-flip-face {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+  .card-flip-back {
+    transform: rotateY(180deg);
+  }
+}
