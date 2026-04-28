@@ -1,5 +1,7 @@
 "use client";
 
+import { AdminUsersDialog } from "@/components/AdminUsersDialog";
+import { useAuth } from "@/components/AuthContext";
 import { useDecks } from "@/components/DecksContext";
 import { useTheme } from "@/components/ThemeContext";
 import { FlipCard } from "@/components/FlipCard";
@@ -88,9 +90,11 @@ export function CardApp() {
     clearStudySessionSeen,
     recordCardStudyGrade,
   } = useDecks();
+  const { user, sessionToken, logout } = useAuth();
   const [view, setView] = useState<View>({ name: "decks" });
   const [newDeckName, setNewDeckName] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [adminUsersOpen, setAdminUsersOpen] = useState(false);
   const [prepAnnouncement, setPrepAnnouncement] = useState<string | null>(null);
   const sessionCompleteFiredRef = useRef(false);
 
@@ -220,15 +224,32 @@ export function CardApp() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl px-4 py-10">
-      <div className="mb-4 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true)}
-          className="rounded-2xl border border-slate-600/80 bg-slate-900/80 px-3.5 py-2 text-sm font-medium text-slate-200 shadow-lg shadow-black/20 ring-1 ring-slate-500/20 transition hover:border-slate-500 hover:bg-slate-800/90 active:scale-[0.98]"
-        >
-          Settings
-        </button>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          Signed in as <span className="font-medium text-slate-300">{user?.username}</span>
+        </p>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {user?.isAdmin && (
+            <button
+              type="button"
+              onClick={() => setAdminUsersOpen(true)}
+              className="rounded-2xl border border-amber-600/50 bg-amber-950/40 px-3.5 py-2 text-sm font-medium text-amber-100 shadow-lg ring-1 ring-amber-500/20 transition hover:bg-amber-900/50"
+            >
+              Manage users
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-2xl border border-slate-600/80 bg-slate-900/80 px-3.5 py-2 text-sm font-medium text-slate-200 shadow-lg shadow-black/20 ring-1 ring-slate-500/20 transition hover:border-slate-500 hover:bg-slate-800/90 active:scale-[0.98]"
+          >
+            Settings
+          </button>
+        </div>
       </div>
+      {adminUsersOpen && (
+        <AdminUsersDialog sessionToken={sessionToken} onClose={() => setAdminUsersOpen(false)} />
+      )}
       {settingsOpen && (
         <StudySettingsDialog
           initial={data.studySpacing}
@@ -237,12 +258,15 @@ export function CardApp() {
             updateStudySpacing(s);
             setSettingsOpen(false);
           }}
+          onLogout={logout}
         />
       )}
 
       <header className="mb-10 text-center">
         <h1 className="text-4xl font-extrabold tracking-tight text-slate-100 sm:text-5xl">Card Flipper</h1>
-        <p className="mt-3 text-pretty text-base text-slate-300">Decks live in this browser (local storage).</p>
+        <p className="mt-3 text-pretty text-base text-slate-300">
+          Your decks are saved to the server and cached in this browser.
+        </p>
         <p className="mt-2 text-xs text-slate-400">
           Reorder decks and cards by dragging a row (the ⠿ icon marks draggable rows).
         </p>
@@ -296,10 +320,12 @@ function StudySettingsDialog({
   initial,
   onClose,
   onSave,
+  onLogout,
 }: {
   initial: StudySpacingSettings;
   onClose: () => void;
   onSave: (s: StudySpacingSettings) => void;
+  onLogout: () => void | Promise<void>;
 }) {
   const { theme, setTheme } = useTheme();
   const { cloudSyncEnabled } = useDecks();
@@ -422,6 +448,19 @@ function StudySettingsDialog({
             </button>
           </div>
         </section>
+
+        <div className="mt-4 border-t border-slate-700/80 pt-4">
+          <button
+            type="button"
+            className="ui-btn-ghost w-full sm:w-auto"
+            onClick={() => {
+              void onLogout();
+              onClose();
+            }}
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </div>
   );

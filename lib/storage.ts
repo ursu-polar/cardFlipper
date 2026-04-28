@@ -165,6 +165,22 @@ export function saveAppData(data: AppData): void {
   window.dispatchEvent(new Event("card-flipper-storage"));
 }
 
+/** localStorage cache for the signed-in user (keyed by server user id). */
+export function userDataStorageKey(userId: string): string {
+  return `${STORAGE_KEY}:u:${userId}`;
+}
+
+export function loadAppDataForUser(userId: string): AppData {
+  if (typeof window === "undefined") return emptyAppData;
+  return parseAppDataFromJsonString(localStorage.getItem(userDataStorageKey(userId)));
+}
+
+export function saveAppDataForUser(userId: string, data: AppData): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(userDataStorageKey(userId), JSON.stringify(data));
+  window.dispatchEvent(new Event("card-flipper-storage"));
+}
+
 export function newId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;

@@ -10,23 +10,19 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  fetchCloudAppData,
-  getOrCreateSyncToken,
-  putCloudAppData,
-} from "@/lib/cloudSyncClient";
+import { fetchCloudAppData, putCloudAppData } from "@/lib/cloudSyncClient";
 import { SAMPLE_CARDS_TEST2, SAMPLE_TEST2_SEED_KEY } from "@/lib/sampleCardsTest2";
 import type { AppData, Deck, Flashcard, Grade, StudySpacingSettings } from "@/lib/types";
 import {
   emptyAppData,
-  loadAppData,
+  loadAppDataForUser,
   newCard,
   newDeck,
   newId,
   normalizeStudySpacing,
   parseAppDataFromJsonString,
-  saveAppData,
-  STORAGE_KEY,
+  saveAppDataForUser,
+  userDataStorageKey,
 } from "@/lib/storage";
 
 type Ctx = {
@@ -51,14 +47,26 @@ type Ctx = {
 
 const DecksContext = createContext<Ctx | null>(null);
 
-export function DecksProvider({ children }: { children: React.ReactNode }) {
+export function DecksProvider({
+  userId,
+  sessionToken,
+  children,
+}: {
+  userId: string;
+  sessionToken: string;
+  children: React.ReactNode;
+}) {
   const [data, setDataState] = useState<AppData>(emptyAppData);
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(false);
   const cloudRef = useRef(false);
-  const tokenRef = useRef("");
+  const tokenRef = useRef(sessionToken);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** Set when the user changes data (not during initial layout / cloud init). */
   const localDirtyRef = useRef(false);
+
+  useEffect(() => {
+    tokenRef.current = sessionToken;
+  }, [sessionToken]);
 
   const scheduleCloudSave = useCallback((next: AppData) => {
     if (!cloudRef.current) return;
@@ -74,29 +82,30 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
       localDirtyRef.current = true;
       setDataState((prev) => {
         const next = updater(prev);
-        saveAppData(next);
+        saveAppDataForUser(userId, next);
         scheduleCloudSave(next);
         return next;
       });
     },
-    [scheduleCloudSave],
+    [scheduleCloudSave, userId],
   );
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    setDataState(loadAppData());
-  }, []);
+    setDataState(loadAppDataForUser(userId));
+    localDirtyRef.current = false;
+  }, [userId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const token = getOrCreateSyncToken();
-    tokenRef.current = token;
-    if (!token) {
+    if (typeof window === "undefined" || !sessionToken) {
+      cloudRef.current = false;
+      setCloudSyncEnabled(false);
       return;
     }
+    tokenRef.current = sessionToken;
     let cancelled = false;
     (async () => {
-      const r = await fetchCloudAppData(token);
+      const r = await fetchCloudAppData(sessionToken);
       if (cancelled) return;
       if (!r.ok) {
         cloudRef.current = false;
@@ -105,19 +114,19 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
       }
       if (r.data != null) {
         if (localDirtyRef.current) {
-          const fresh = loadAppData();
-          void putCloudAppData(token, fresh);
+          const fresh = loadAppDataForUser(userId);
+          void putCloudAppData(sessionToken, fresh);
         } else {
           setDataState(r.data);
-          saveAppData(r.data);
+          saveAppDataForUser(userId, r.data);
         }
         cloudRef.current = true;
         setCloudSyncEnabled(true);
         return;
       }
-      const local = loadAppData();
+      const local = loadAppDataForUser(userId);
       if (local.decks.length > 0) {
-        const ok = await putCloudAppData(token, local);
+        const ok = await putCloudAppData(sessionToken, local);
         if (cancelled) return;
         cloudRef.current = ok;
         setCloudSyncEnabled(ok);
@@ -129,12 +138,13 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [userId, sessionToken]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const k = userDataStorageKey(userId);
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== STORAGE_KEY || e.newValue == null) return;
+      if (e.key !== k || e.newValue == null) return;
       try {
         setDataState(parseAppDataFromJsonString(e.newValue));
       } catch {
@@ -143,7 +153,7 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [userId]);
 
   const addDeck = useCallback(
     (name: string) => {
@@ -355,20 +365,17 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
     [setData],
   );
 
-  /** One-time: append 20 sample cards to a deck named "test2" (create deck if missing). */
-  const test2SampleSeeded = useRef(false);
+  /** Dev-only: once per user, append sample cards to a deck named "test2". */
   useEffect(() => {
-    if (test2SampleSeeded.current) return;
     if (typeof window === "undefined") return;
     if (process.env.NODE_ENV !== "development") {
-      test2SampleSeeded.current = true;
       return;
     }
-    if (localStorage.getItem(SAMPLE_TEST2_SEED_KEY) === "1") {
-      test2SampleSeeded.current = true;
+    const perUserKey = `${SAMPLE_TEST2_SEED_KEY}:${userId}`;
+    if (localStorage.getItem(perUserKey) === "1") {
       return;
     }
-    const d = loadAppData();
+    const d = loadAppDataForUser(userId);
     const test2 = d.decks.find((x) => x.name.trim().toLowerCase() === "test2");
     const test2Rows = SAMPLE_CARDS_TEST2.map((r) => ({
       question: r.question,
@@ -380,9 +387,8 @@ export function DecksProvider({ children }: { children: React.ReactNode }) {
       const created = addDeck("test2");
       importCards(created.id, test2Rows);
     }
-    localStorage.setItem(SAMPLE_TEST2_SEED_KEY, "1");
-    test2SampleSeeded.current = true;
-  }, [addDeck, importCards]);
+    localStorage.setItem(perUserKey, "1");
+  }, [addDeck, importCards, userId]);
 
   const value = useMemo(
     () => ({
