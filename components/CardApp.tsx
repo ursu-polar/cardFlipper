@@ -8,13 +8,17 @@ import { FlipCard } from "@/components/FlipCard";
 import { SortableCardListInDeck, SortableDecksList } from "@/components/SortableDndLists";
 import { parseCardCSV } from "@/lib/csv";
 import {
-  requeueAfterRange,
+  countDueNow,
+  formatIntervalShort,
+  formatTimeLeft,
+  minDueTime,
+  pickNextCardId,
   shuffleIds,
   studyGradeLabel,
   studyGradePillClass,
   type Grade,
 } from "@/lib/reviewQueue";
-import { defaultStudySpacing } from "@/lib/storage";
+import { defaultStudySpacing, MAX_STUDY_DELAY_MS } from "@/lib/storage";
 import { getRingOffsetClass, themeLabels, type AppTheme } from "@/lib/theme";
 import type { Flashcard, StudySpacingSettings } from "@/lib/types";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -65,6 +69,29 @@ function filterSegmentClass(active: boolean): string {
   return active
     ? "rounded-full border border-blue-500/50 bg-blue-500/12 px-3.5 py-1.5 text-sm font-medium text-blue-100 shadow-md shadow-blue-500/10 ring-1 ring-inset ring-blue-400/20"
     : "rounded-full border border-slate-600/80 bg-slate-800/45 px-3.5 py-1.5 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/70";
+}
+
+const DELAY_UNITS = ["s", "m", "h", "d"] as const;
+type DelayUnit = (typeof DELAY_UNITS)[number];
+const DELAY_MULT: Record<DelayUnit, number> = {
+  s: 1000,
+  m: 60_000,
+  h: 60 * 60_000,
+  d: 24 * 60 * 60_000,
+};
+
+function unitLabel(u: DelayUnit): string {
+  if (u === "s") return "Seconds";
+  if (u === "m") return "Minutes";
+  if (u === "h") return "Hours";
+  return "Days";
+}
+
+function bestDelayUnitForMs(ms: number): DelayUnit {
+  if (ms > 0 && ms % DELAY_MULT.d === 0) return "d";
+  if (ms > 0 && ms % DELAY_MULT.h === 0) return "h";
+  if (ms > 0 && ms % DELAY_MULT.m === 0) return "m";
+  return "s";
 }
 
 type View =
@@ -330,40 +357,61 @@ function StudySettingsDialog({
   const { theme, setTheme } = useTheme();
   const { cloudSyncEnabled } = useDecks();
   const [s, setS] = useState<StudySpacingSettings>(initial);
+  const [unitByKey, setUnitByKey] = useState<Record<keyof StudySpacingSettings, DelayUnit>>(() => ({
+    again: bestDelayUnitForMs(initial.again),
+    hard: bestDelayUnitForMs(initial.hard),
+    good: bestDelayUnitForMs(initial.good),
+    easy: bestDelayUnitForMs(initial.easy),
+  }));
 
-  const row = (key: keyof StudySpacingSettings, label: string) => (
-    <div key={key} className="border-b border-slate-700 py-3 last:border-0">
-      <p className="text-sm font-medium text-slate-100">{label}</p>
-      <div className="mt-2 grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-slate-400">Min (cards before next)</label>
-          <input
-            type="number"
-            min={0}
-            className="ui-input mt-1 w-full"
-            value={s[key].min}
-            onChange={(e) => {
-              const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
-              setS((p) => ({ ...p, [key]: { ...p[key], min: n } }));
-            }}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-slate-400">Max (cards before next)</label>
-          <input
-            type="number"
-            min={0}
-            className="ui-input mt-1 w-full"
-            value={s[key].max}
-            onChange={(e) => {
-              const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
-              setS((p) => ({ ...p, [key]: { ...p[key], max: n } }));
-            }}
-          />
+  const row = (key: keyof StudySpacingSettings, label: string) => {
+    const u = unitByKey[key];
+    const mult = DELAY_MULT[u];
+    const nDisplay = s[key] / mult;
+    return (
+      <div key={key} className="border-b border-slate-700 py-3 last:border-0">
+        <p className="text-sm font-medium text-slate-100">{label}</p>
+        <div className="mt-2 grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-slate-400">After this rating, next in</label>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              className="ui-input mt-1 w-full"
+              value={nDisplay}
+              onChange={(e) => {
+                const raw = e.target.value;
+                const v = raw === "" ? 0 : Number(raw);
+                if (!Number.isFinite(v) || v < 0) return;
+                setS((p) => ({
+                  ...p,
+                  [key]: Math.min(MAX_STUDY_DELAY_MS, Math.floor(v * mult)),
+                }));
+              }}
+            />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400">Unit</label>
+            <select
+              className="ui-input mt-1 w-full"
+              value={u}
+              onChange={(e) => {
+                const newU = e.target.value as DelayUnit;
+                setUnitByKey((p) => ({ ...p, [key]: newU }));
+              }}
+            >
+              {DELAY_UNITS.map((du) => (
+                <option key={du} value={du}>
+                  {unitLabel(du)}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div
@@ -418,13 +466,12 @@ function StudySettingsDialog({
 
         <section
           className="mt-4 rounded-2xl border border-slate-600/50 bg-slate-800/35 p-4 ring-1 ring-slate-500/10"
-          aria-label="Study queue spacing"
+          aria-label="Spaced repetition"
         >
-          <h3 className="text-sm font-semibold text-slate-200">Study queue spacing</h3>
+          <h3 className="text-sm font-semibold text-slate-200">Spaced repetition</h3>
           <p className="mt-1 text-sm text-slate-400">
-            When you rate a card, it is shuffled back into the queue after a random number of
-            <em> other </em>
-            cards, between min and max.
+            Set how long until each card is due again after you choose Again, Hard, Good, or Easy.
+            Times are based on the clock, not how many other cards you review.
           </p>
           <div className="mt-2">
             {row("again", "Again")}
@@ -436,7 +483,16 @@ function StudySettingsDialog({
             <button
               type="button"
               className="ui-btn-ghost !px-3 !py-2 text-sm"
-              onClick={() => setS(defaultStudySpacing())}
+              onClick={() => {
+                const d = defaultStudySpacing();
+                setS(d);
+                setUnitByKey({
+                  again: bestDelayUnitForMs(d.again),
+                  hard: bestDelayUnitForMs(d.hard),
+                  good: bestDelayUnitForMs(d.good),
+                  easy: bestDelayUnitForMs(d.easy),
+                });
+              }}
             >
               Reset defaults
             </button>
@@ -1050,15 +1106,19 @@ function StudyDeck({
   onGradeApplied?: (cardId: string, grade: Grade) => void;
 }) {
   const { theme } = useTheme();
-  const [queue, setQueue] = useState<string[]>([]);
+  const [dueAt, setDueAt] = useState<Record<string, number>>({});
+  const [orderHint, setOrderHint] = useState<string[]>([]);
   const [flipped, setFlipped] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editQ, setEditQ] = useState("");
   const [editA, setEditA] = useState("");
+  const [tick, setTick] = useState(0);
   const onPresentedRef = useRef(onCardPresented);
   onPresentedRef.current = onCardPresented;
   const onGradeRef = useRef(onGradeApplied);
   onGradeRef.current = onGradeApplied;
+
+  const cardIds = useMemo(() => deck.cards.map((c) => c.id), [deck.cards]);
 
   const idsKey = useMemo(
     () =>
@@ -1072,16 +1132,34 @@ function StudyDeck({
 
   useLayoutEffect(() => {
     if (deck.cards.length === 0) {
-      setQueue([]);
+      setDueAt({});
+      setOrderHint([]);
       return;
     }
-    setQueue(shuffleIds(deck.cards.map((c) => c.id)));
-    // Reshuffle only when which cards exist in the deck changes (idsKey), not on every deck object reference change
+    const cids = deck.cards.map((c) => c.id);
+    setOrderHint(shuffleIds(cids));
+    setDueAt(Object.fromEntries(cids.map((id) => [id, 0])));
+    // Only when the set of card ids changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);
 
-  const currentId = queue[0];
+  useEffect(() => {
+    const i = setInterval(() => {
+      setTick((t) => t + 1);
+    }, 1000);
+    return () => clearInterval(i);
+  }, []);
+
+  const currentId = useMemo(() => {
+    void tick; // wall-clock: re-pick when time advances
+    return pickNextCardId(cardIds, dueAt, Date.now(), orderHint);
+  }, [cardIds, dueAt, orderHint, tick]);
   const card = currentId ? deck.cards.find((c) => c.id === currentId) : undefined;
+
+  const dueNowCount = useMemo(() => {
+    void tick;
+    return countDueNow(cardIds, dueAt, Date.now());
+  }, [cardIds, dueAt, tick]);
 
   useEffect(() => {
     if (currentId) onPresentedRef.current?.(currentId);
@@ -1101,11 +1179,14 @@ function StudyDeck({
   const applyGrade = (g: Grade) => {
     if (!currentId) return;
     onGradeRef.current?.(currentId, g);
-    setQueue((q) => requeueAfterRange(q, spacing[g], currentId));
+    const delay = spacing[g];
+    const t = Date.now();
+    setDueAt((prev) => ({ ...prev, [currentId]: t + delay }));
     setFlipped(false);
   };
 
   const totalInDeck = deck.cards.length;
+  const schedReady = orderHint.length > 0 || totalInDeck === 0;
 
   if (totalInDeck === 0) {
     return (
@@ -1122,7 +1203,44 @@ function StudyDeck({
     );
   }
 
-  if (!currentId || !card) {
+  if (!schedReady) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-20 text-center">
+        <p className="text-slate-300">Loading…</p>
+        <button
+          type="button"
+          className="mt-4 rounded-lg px-4 py-2.5 text-base font-semibold text-blue-400 transition hover:bg-slate-800/50 hover:underline"
+          onClick={onBack}
+        >
+          Back
+        </button>
+      </div>
+    );
+  }
+
+  if (!currentId) {
+    const tNext = minDueTime(cardIds, dueAt);
+    const msLeft = tNext !== null ? tNext - Date.now() : 0;
+    return (
+      <div className="mx-auto min-h-dvh max-w-2xl px-4 py-6">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="-m-1 max-w-[min(100%,20rem)] shrink-0 rounded-lg px-3 py-2.5 text-left text-base font-semibold leading-snug text-blue-400 transition hover:bg-slate-800/50 hover:underline"
+          >
+            ← {deck.name}
+          </button>
+        </div>
+        <div className="mx-auto max-w-md py-20 text-center">
+          <p className="text-lg text-slate-200">No cards due right now</p>
+          <p className="mt-2 text-slate-400">Next review in {formatTimeLeft(msLeft)}.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!card) {
     return (
       <div className="mx-auto max-w-md px-4 py-20 text-center">
         <p className="text-slate-300">Loading…</p>
@@ -1155,7 +1273,7 @@ function StudyDeck({
           ← {deck.name}
         </button>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-400">In queue: {queue.length}</span>
+          <span className="text-sm text-slate-400">Due: {dueNowCount}</span>
           <button
             type="button"
             className="ui-btn-ghost !px-2.5 !py-1.5 text-xs"
@@ -1170,7 +1288,9 @@ function StudyDeck({
         </div>
       </div>
 
-      <p className="mb-2 text-center text-xs text-slate-400">Study order is shuffled. Rate after you turn the card.</p>
+      <p className="mb-2 text-center text-xs text-slate-400">
+        Time-based review. Turn the card, then choose how well you knew it. Cards reappear when due.
+      </p>
 
       <FlipCard
         question={card.question}
@@ -1185,8 +1305,9 @@ function StudyDeck({
                 type="button"
                 className={gradeButtonClass(key, theme)}
                 onClick={() => applyGrade(key)}
+                title={formatIntervalShort(spacing[key])}
               >
-                {label}
+                {label} · {formatIntervalShort(spacing[key])}
               </button>
             ))}
           </div>

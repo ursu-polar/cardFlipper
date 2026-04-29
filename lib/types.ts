@@ -20,18 +20,16 @@ export type Deck = {
   updatedAt: number;
 };
 
-/** Inclusive; card is reinserted after this many *other* cards in the review queue. */
-export type SpacingRange = { min: number; max: number };
-
+/** Per-grade delay in milliseconds before the card is due again (spaced repetition). */
 export type StudySpacingSettings = {
-  again: SpacingRange;
-  hard: SpacingRange;
-  good: SpacingRange;
-  easy: SpacingRange;
+  again: number;
+  hard: number;
+  good: number;
+  easy: number;
 };
 
 export type AppData = {
-  version: 2;
+  version: 3;
   decks: Deck[];
   studySpacing: StudySpacingSettings;
 };

@@ -1,36 +1,99 @@
-import type { Grade, SpacingRange } from "./types";
-
-/** Inclusive random integer. */
-export function randomInt(min: number, max: number): number {
-  const a = Math.min(min, max);
-  const b = Math.max(min, max);
-  return a + Math.floor(Math.random() * (b - a + 1));
-}
+import type { Grade } from "./types";
 
 /** Fisher–Yates shuffle of a copy. */
 export function shuffleIds<T>(ids: T[]): T[] {
   const a = [...ids];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
+    const t = a[i]!;
+    a[i] = a[j]!;
+    a[j] = t;
   }
   return a;
 }
 
-/**
- * `queue[0]` is the current card. Pops it, then reinserts it so that `k` other cards
- * come first, with `k` random in `range` (inclusive), or at the end if the queue is short.
- */
-export function requeueAfterRange(queue: string[], range: SpacingRange, cardId: string): string[] {
-  if (queue.length === 0) return [cardId];
-  if (queue[0] !== cardId) return queue;
-  const rest = queue.slice(1);
-  const k = randomInt(range.min, range.max);
-  const insertAt = Math.min(k, rest.length);
-  return [...rest.slice(0, insertAt), cardId, ...rest.slice(insertAt)];
+/** Map card id -> index in tie-break order (smaller = earlier). */
+function orderRankMap(order: string[]): Map<string, number> {
+  return new Map(order.map((id, i) => [id, i]));
 }
 
-export type { Grade } from "./types";
+/**
+ * Among cards with dueAt <= now, pick the id with smallest dueAt; ties broken by
+ * earlier position in `orderHint`.
+ * Returns null if `cardIds` is empty.
+ */
+export function pickNextCardId(
+  cardIds: string[],
+  dueAt: Record<string, number>,
+  now: number,
+  orderHint: string[],
+): string | null {
+  if (cardIds.length === 0) return null;
+  const rank = orderRankMap(orderHint);
+  const ready = cardIds.filter((id) => (dueAt[id] ?? 0) <= now);
+  if (ready.length === 0) return null;
+  ready.sort((a, b) => {
+    const da = dueAt[a] ?? 0;
+    const db = dueAt[b] ?? 0;
+    if (da !== db) return da - db;
+    return (rank.get(a) ?? 999999) - (rank.get(b) ?? 999999);
+  });
+  return ready[0] ?? null;
+}
+
+/** Earliest due time among all card ids, or null if no cards. */
+export function minDueTime(cardIds: string[], dueAt: Record<string, number>): number | null {
+  if (cardIds.length === 0) return null;
+  let m: number | null = null;
+  for (const id of cardIds) {
+    const t = dueAt[id] ?? 0;
+    if (m === null || t < m) m = t;
+  }
+  return m;
+}
+
+/** How many cards have dueAt <= now. */
+export function countDueNow(cardIds: string[], dueAt: Record<string, number>, now: number): number {
+  return cardIds.filter((id) => (dueAt[id] ?? 0) <= now).length;
+}
+
+/** Human-readable short label for a delay (e.g. for grade buttons). */
+export function formatIntervalShort(ms: number): string {
+  if (ms < 0) return "0s";
+  if (ms < 60_000) {
+    const s = Math.max(1, Math.round(ms / 1000));
+    return s === 1 ? "1s" : `${s}s`;
+  }
+  if (ms < 60 * 60_000) {
+    const m = Math.round(ms / 60_000);
+    return m === 1 ? "1 min" : `${m} min`;
+  }
+  if (ms < 24 * 60 * 60_000) {
+    const h = Math.round(ms / (60 * 60_000));
+    return h === 1 ? "1 h" : `${h} h`;
+  }
+  const d = Math.round(ms / (24 * 60 * 60_000));
+  return d === 1 ? "1 day" : `${d} days`;
+}
+
+/** Shorter countdown for the “wait until next card” screen (refines every second in the UI). */
+export function formatTimeLeft(ms: number): string {
+  if (ms <= 0) return "a moment";
+  if (ms < 60_000) return `${Math.max(1, Math.ceil(ms / 1000))}s`;
+  if (ms < 60 * 60_000) return `${Math.ceil(ms / 60_000)} min`;
+  if (ms < 24 * 60 * 60_000) {
+    const t = Math.ceil(ms / 60_000);
+    const mm = t % 60;
+    const hh = Math.floor(t / 60);
+    return mm === 0 ? `${hh}h` : `${hh}h ${mm}m`;
+  }
+  const days = Math.floor(ms / (24 * 60 * 60_000));
+  const remH = Math.floor((ms % (24 * 60 * 60_000)) / (60 * 60_000));
+  if (remH > 0) return `${days}d ${remH}h`;
+  return `${days}d`;
+}
+
+export type { Grade, StudySpacingSettings } from "./types";
 
 export function studyGradeLabel(g: Grade): string {
   switch (g) {

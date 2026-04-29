@@ -2,38 +2,55 @@ import type { AppData, Deck, Flashcard, Grade, StudySpacingSettings } from "./ty
 
 export const STORAGE_KEY = "card-flipper-v1";
 
+const MS_DAY = 24 * 60 * 60 * 1000;
+/** Reject pathological or corrupted values; allow 0 (immediate) up to 1 year. */
+export const MAX_STUDY_DELAY_MS = 365 * MS_DAY;
+
 export function defaultStudySpacing(): StudySpacingSettings {
   return {
-    again: { min: 2, max: 5 },
-    hard: { min: 8, max: 15 },
-    good: { min: 20, max: 30 },
-    easy: { min: 35, max: 50 },
+    again: 60_000, // 1 min
+    hard: 8 * 60_000, // 8 min
+    good: 15 * 60_000, // 15 min
+    easy: 4 * MS_DAY, // 4 days
   };
 }
 
-function normalizeRange(r: unknown, fallback: { min: number; max: number }): { min: number; max: number } {
-  if (!r || typeof r !== "object") return { ...fallback };
-  const o = r as Record<string, unknown>;
-  const min = Math.max(0, Math.floor(Number(o.min) || fallback.min));
-  const max = Math.max(0, Math.floor(Number(o.max) || fallback.max));
-  if (min <= max) return { min, max };
-  return { min: max, max: min };
+function isLegacySpacingRange(x: unknown): x is { min: number; max: number } {
+  if (!x || typeof x !== "object") return false;
+  const o = x as Record<string, unknown>;
+  return "min" in o && "max" in o;
+}
+
+function normalizeDelayMs(x: unknown, fallback: number): number {
+  const n = typeof x === "number" ? x : Number(x);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < 0) return 0;
+  if (n > MAX_STUDY_DELAY_MS) return MAX_STUDY_DELAY_MS;
+  return Math.floor(n);
 }
 
 export function normalizeStudySpacing(s: unknown): StudySpacingSettings {
   const d = defaultStudySpacing();
   if (!s || typeof s !== "object") return d;
   const o = s as Record<string, unknown>;
+  if (
+    isLegacySpacingRange(o.again) ||
+    isLegacySpacingRange(o.hard) ||
+    isLegacySpacingRange(o.good) ||
+    isLegacySpacingRange(o.easy)
+  ) {
+    return { ...d };
+  }
   return {
-    again: normalizeRange(o.again, d.again),
-    hard: normalizeRange(o.hard, d.hard),
-    good: normalizeRange(o.good, d.good),
-    easy: normalizeRange(o.easy, d.easy),
+    again: normalizeDelayMs(o.again, d.again),
+    hard: normalizeDelayMs(o.hard, d.hard),
+    good: normalizeDelayMs(o.good, d.good),
+    easy: normalizeDelayMs(o.easy, d.easy),
   };
 }
 
 export const emptyAppData: AppData = {
-  version: 2,
+  version: 3,
   decks: [],
   studySpacing: defaultStudySpacing(),
 };
@@ -122,7 +139,7 @@ function parseJSON(raw: string | null): AppData {
         };
       });
       return {
-        version: 2,
+        version: 3,
         decks,
         studySpacing: defaultStudySpacing(),
       };
@@ -138,7 +155,23 @@ function parseJSON(raw: string | null): AppData {
         };
       });
       return {
-        version: 2,
+        version: 3,
+        decks,
+        studySpacing: normalizeStudySpacing(o.studySpacing),
+      };
+    }
+    if (o.version === 3) {
+      const decks = (o.decks as Deck[]).map((deck) => {
+        const withCards = mapDeckWithNormalizedCards(deck);
+        const valid = new Set(withCards.cards.map((c) => c.id));
+        return {
+          ...withCards,
+          studySessionSeenIds: filterSeenIdsToDeck(deck.studySessionSeenIds, valid),
+          cardLastStudyGrade: filterCardLastGradesToDeck(deck.cardLastStudyGrade, valid),
+        };
+      });
+      return {
+        version: 3,
         decks,
         studySpacing: normalizeStudySpacing(o.studySpacing),
       };
