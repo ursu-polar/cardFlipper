@@ -1,4 +1,4 @@
-import type { AppData, Deck, Flashcard, Grade, StudySpacingSettings } from "./types";
+import type { AppData, CardSchedule, Deck, Flashcard, Grade, StudySpacingSettings } from "./types";
 
 export const STORAGE_KEY = "card-flipper-v1";
 
@@ -50,7 +50,7 @@ export function normalizeStudySpacing(s: unknown): StudySpacingSettings {
 }
 
 export const emptyAppData: AppData = {
-  version: 3,
+  version: 4,
   decks: [],
   studySpacing: defaultStudySpacing(),
 };
@@ -80,6 +80,28 @@ function filterSeenIdsToDeck(seen: unknown, validIds: Set<string>): string[] | u
     out.push(id);
   }
   return out.length ? out : undefined;
+}
+
+function filterCardScheduleToDeck(
+  raw: unknown,
+  validIds: Set<string>,
+): Record<string, CardSchedule> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, CardSchedule> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!validIds.has(k) || !v || typeof v !== "object") continue;
+    const o = v as Record<string, unknown>;
+    const nextDueAt = Number(o.nextDueAt);
+    const lastIntervalMs = Number(o.lastIntervalMs);
+    const ease = Number(o.ease);
+    if (![nextDueAt, lastIntervalMs, ease].every((n) => Number.isFinite(n))) continue;
+    out[k] = {
+      nextDueAt: Math.floor(nextDueAt),
+      lastIntervalMs: Math.max(0, Math.min(MAX_STUDY_DELAY_MS, Math.floor(lastIntervalMs))),
+      ease: Math.min(2.5, Math.max(1.3, ease)),
+    };
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Migrates legacy `answer: string` to `answers: string[]`. */
@@ -114,6 +136,17 @@ function mapDeckWithNormalizedCards(deck: Deck): Deck {
   };
 }
 
+function withFilteredDeckPerCardFields(d: Deck): Deck {
+  const withCards = mapDeckWithNormalizedCards(d);
+  const valid = new Set(withCards.cards.map((c) => c.id));
+  return {
+    ...withCards,
+    studySessionSeenIds: filterSeenIdsToDeck(d.studySessionSeenIds, valid),
+    cardLastStudyGrade: filterCardLastGradesToDeck(d.cardLastStudyGrade, valid),
+    cardSchedule: filterCardScheduleToDeck(d.cardSchedule, valid),
+  };
+}
+
 function parseJSON(raw: string | null): AppData {
   if (!raw) return emptyAppData;
   try {
@@ -124,54 +157,34 @@ function parseJSON(raw: string | null): AppData {
 
     if (o.version === 1) {
       const decks = (o.decks as Deck[]).map((deck) => {
-        const withCards = mapDeckWithNormalizedCards(deck);
-        const valid = new Set(withCards.cards.map((c) => c.id));
-        return {
-          ...withCards,
-          studySessionSeenIds: filterSeenIdsToDeck(
-            (deck as Deck).studySessionSeenIds,
-            valid,
-          ),
-          cardLastStudyGrade: filterCardLastGradesToDeck(
-            (deck as Deck).cardLastStudyGrade,
-            valid,
-          ),
-        };
+        return withFilteredDeckPerCardFields(deck as Deck);
       });
       return {
-        version: 3,
+        version: 4,
         decks,
         studySpacing: defaultStudySpacing(),
       };
     }
     if (o.version === 2) {
-      const decks = (o.decks as Deck[]).map((deck) => {
-        const withCards = mapDeckWithNormalizedCards(deck);
-        const valid = new Set(withCards.cards.map((c) => c.id));
-        return {
-          ...withCards,
-          studySessionSeenIds: filterSeenIdsToDeck(deck.studySessionSeenIds, valid),
-          cardLastStudyGrade: filterCardLastGradesToDeck(deck.cardLastStudyGrade, valid),
-        };
-      });
+      const decks = (o.decks as Deck[]).map((deck) => withFilteredDeckPerCardFields(deck as Deck));
       return {
-        version: 3,
+        version: 4,
         decks,
         studySpacing: normalizeStudySpacing(o.studySpacing),
       };
     }
     if (o.version === 3) {
-      const decks = (o.decks as Deck[]).map((deck) => {
-        const withCards = mapDeckWithNormalizedCards(deck);
-        const valid = new Set(withCards.cards.map((c) => c.id));
-        return {
-          ...withCards,
-          studySessionSeenIds: filterSeenIdsToDeck(deck.studySessionSeenIds, valid),
-          cardLastStudyGrade: filterCardLastGradesToDeck(deck.cardLastStudyGrade, valid),
-        };
-      });
+      const decks = (o.decks as Deck[]).map((deck) => withFilteredDeckPerCardFields(deck as Deck));
       return {
-        version: 3,
+        version: 4,
+        decks,
+        studySpacing: normalizeStudySpacing(o.studySpacing),
+      };
+    }
+    if (o.version === 4) {
+      const decks = (o.decks as Deck[]).map((deck) => withFilteredDeckPerCardFields(deck as Deck));
+      return {
+        version: 4,
         decks,
         studySpacing: normalizeStudySpacing(o.studySpacing),
       };

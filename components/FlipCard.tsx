@@ -40,21 +40,21 @@ export function FlipCard({ question, answers, flipped, onFlip, revealActions }: 
           <p className="mt-1 text-sm leading-relaxed text-slate-300 whitespace-pre-wrap break-words">
             {question || "—"}
           </p>
-          <p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-400">
+          <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-400">
             {answers.length > 1 ? "Answers" : "Answer"}
           </p>
-          <div className="mt-1 flex flex-1 flex-col gap-2">
+          <div className="mt-2 flex min-h-0 flex-1 flex-col justify-start gap-3 sm:gap-4">
             {answers.length > 0 ? (
               answers.map((a, i) => (
                 <p
                   key={i}
-                  className="text-lg leading-relaxed text-slate-100 whitespace-pre-wrap break-words"
+                  className="text-balance text-3xl font-semibold leading-[1.15] tracking-tight text-slate-100 sm:text-4xl md:text-5xl whitespace-pre-wrap break-words [word-break:break-word] [overflow-wrap:anywhere]"
                 >
                   {a}
                 </p>
               ))
             ) : (
-              <p className="text-lg text-slate-100">—</p>
+              <p className="text-3xl font-semibold text-slate-100 sm:text-4xl md:text-5xl">—</p>
             )}
           </div>
         </div>

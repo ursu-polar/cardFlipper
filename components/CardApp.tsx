@@ -18,9 +18,10 @@ import {
   studyGradePillClass,
   type Grade,
 } from "@/lib/reviewQueue";
+import { computeNextSchedule, toCardSchedule } from "@/lib/scheduleNext";
 import { defaultStudySpacing, MAX_STUDY_DELAY_MS } from "@/lib/storage";
 import { getRingOffsetClass, themeLabels, type AppTheme } from "@/lib/theme";
-import type { Flashcard, StudySpacingSettings } from "@/lib/types";
+import type { CardSchedule, Flashcard, StudySpacingSettings } from "@/lib/types";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 /** One answer per line; must yield at least one line for add / save. */
@@ -115,7 +116,8 @@ export function CardApp() {
     updateStudySpacing,
     appendStudySessionSeen,
     clearStudySessionSeen,
-    recordCardStudyGrade,
+    recordCardStudyResult,
+    resetDeckProgress,
   } = useDecks();
   const { user, sessionToken, logout } = useAuth();
   const [view, setView] = useState<View>({ name: "decks" });
@@ -142,12 +144,12 @@ export function CardApp() {
     [deck, appendStudySessionSeen],
   );
 
-  const onGradeInStudy = useCallback(
-    (cardId: string, grade: Grade) => {
+  const onReviewCompleteInStudy = useCallback(
+    (cardId: string, grade: Grade, nextSchedule: CardSchedule) => {
       if (!deck) return;
-      recordCardStudyGrade(deck.id, cardId, grade);
+      recordCardStudyResult(deck.id, cardId, grade, nextSchedule);
     },
-    [deck, recordCardStudyGrade],
+    [deck, recordCardStudyResult],
   );
 
   useEffect(() => {
@@ -229,7 +231,7 @@ export function CardApp() {
         onManageDeck={() => setView({ name: "manage", deckId: deck.id })}
         onResetDeckProgress={() => {
           setPrepAnnouncement(null);
-          clearStudySessionSeen(deck.id);
+          resetDeckProgress(deck.id);
         }}
       />
     );
@@ -244,7 +246,7 @@ export function CardApp() {
         onUpdateCard={(cardId, q, answers) => updateCard(deck.id, cardId, q, answers)}
         onBack={() => goStudyPrep(deck.id, view.from)}
         onCardPresented={onPresentCardInStudy}
-        onGradeApplied={onGradeInStudy}
+        onReviewComplete={onReviewCompleteInStudy}
       />
     );
   }
@@ -1096,18 +1098,19 @@ function StudyDeck({
   onBack,
   onUpdateCard,
   onCardPresented,
-  onGradeApplied,
+  onReviewComplete,
 }: {
-  deck: { name: string; cards: Flashcard[] };
+  deck: { name: string; cards: Flashcard[]; id: string; cardSchedule?: Record<string, CardSchedule> };
   spacing: StudySpacingSettings;
   onBack: () => void;
   onUpdateCard: (cardId: string, q: string, answers: string[]) => void;
   onCardPresented?: (cardId: string) => void;
-  onGradeApplied?: (cardId: string, grade: Grade) => void;
+  onReviewComplete?: (cardId: string, grade: Grade, nextSchedule: CardSchedule) => void;
 }) {
   const { theme } = useTheme();
   const [dueAt, setDueAt] = useState<Record<string, number>>({});
   const [orderHint, setOrderHint] = useState<string[]>([]);
+  const [localSchedule, setLocalSchedule] = useState<Record<string, CardSchedule | undefined>>({});
   const [flipped, setFlipped] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editQ, setEditQ] = useState("");
@@ -1115,8 +1118,13 @@ function StudyDeck({
   const [tick, setTick] = useState(0);
   const onPresentedRef = useRef(onCardPresented);
   onPresentedRef.current = onCardPresented;
-  const onGradeRef = useRef(onGradeApplied);
-  onGradeRef.current = onGradeApplied;
+  const onReviewRef = useRef(onReviewComplete);
+  onReviewRef.current = onReviewComplete;
+
+  const getSchedule = useCallback(
+    (id: string): CardSchedule | null => localSchedule[id] ?? deck.cardSchedule?.[id] ?? null,
+    [deck.cardSchedule, localSchedule],
+  );
 
   const cardIds = useMemo(() => deck.cards.map((c) => c.id), [deck.cards]);
 
@@ -1134,11 +1142,17 @@ function StudyDeck({
     if (deck.cards.length === 0) {
       setDueAt({});
       setOrderHint([]);
+      setLocalSchedule({});
       return;
     }
     const cids = deck.cards.map((c) => c.id);
     setOrderHint(shuffleIds(cids));
-    setDueAt(Object.fromEntries(cids.map((id) => [id, 0])));
+    setLocalSchedule({});
+    setDueAt(
+      Object.fromEntries(
+        cids.map((id) => [id, deck.cardSchedule?.[id]?.nextDueAt ?? 0]),
+      ),
+    );
     // Only when the set of card ids changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);
@@ -1178,10 +1192,18 @@ function StudyDeck({
 
   const applyGrade = (g: Grade) => {
     if (!currentId) return;
-    onGradeRef.current?.(currentId, g);
-    const delay = spacing[g];
     const t = Date.now();
-    setDueAt((prev) => ({ ...prev, [currentId]: t + delay }));
+    const previous = getSchedule(currentId);
+    const next = computeNextSchedule(
+      g,
+      previous,
+      spacing,
+      t,
+    );
+    const cardSchedule = toCardSchedule(next);
+    onReviewRef.current?.(currentId, g, cardSchedule);
+    setLocalSchedule((p) => ({ ...p, [currentId]: cardSchedule }));
+    setDueAt((prev) => ({ ...prev, [currentId]: next.nextDueAt }));
     setFlipped(false);
   };
 
@@ -1289,7 +1311,8 @@ function StudyDeck({
       </div>
 
       <p className="mb-2 text-center text-xs text-slate-400">
-        Time-based review. Turn the card, then choose how well you knew it. Cards reappear when due.
+        Spaced repetition: success intervals grow. Turn the card, then rate. Button times show the delay
+        until the next rep for <em>this</em> card.
       </p>
 
       <FlipCard
@@ -1299,17 +1322,25 @@ function StudyDeck({
         onFlip={() => setFlipped(true)}
         revealActions={
           <div className="grid w-full max-w-lg grid-cols-2 gap-2 sm:grid-cols-4">
-            {gradeLabels.map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={gradeButtonClass(key, theme)}
-                onClick={() => applyGrade(key)}
-                title={formatIntervalShort(spacing[key])}
-              >
-                {label} · {formatIntervalShort(spacing[key])}
-              </button>
-            ))}
+            {gradeLabels.map(({ key, label }) => {
+              const previewMs = computeNextSchedule(
+                key,
+                currentId ? getSchedule(currentId) : null,
+                spacing,
+                Date.now(),
+              ).intervalMs;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  className={gradeButtonClass(key, theme)}
+                  onClick={() => applyGrade(key)}
+                  title={formatIntervalShort(previewMs)}
+                >
+                  {label} · {formatIntervalShort(previewMs)}
+                </button>
+              );
+            })}
           </div>
         }
       />

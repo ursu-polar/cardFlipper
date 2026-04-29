@@ -8,6 +8,13 @@ export type Flashcard = {
   updatedAt: number;
 };
 
+/** Snapshot after a review; `lastIntervalMs` is the delay just applied toward the next due date. */
+export type CardSchedule = {
+  nextDueAt: number;
+  lastIntervalMs: number;
+  ease: number;
+};
+
 export type Deck = {
   id: string;
   name: string;
@@ -16,6 +23,11 @@ export type Deck = {
   studySessionSeenIds?: string[];
   /** Latest study rating per card id (Again / Hard / Good / Easy). */
   cardLastStudyGrade?: Record<string, Grade>;
+  /**
+   * SM-2–style per-card state: when the card is due, last scheduled interval, ease factor.
+   * Used for growing intervals (e.g. second Easy after 4d -> 8d). Keys = card ids.
+   */
+  cardSchedule?: Record<string, CardSchedule>;
   createdAt: number;
   updatedAt: number;
 };
@@ -29,7 +41,7 @@ export type StudySpacingSettings = {
 };
 
 export type AppData = {
-  version: 3;
+  version: 4;
   decks: Deck[];
   studySpacing: StudySpacingSettings;
 };

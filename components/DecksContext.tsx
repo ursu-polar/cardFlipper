@@ -12,7 +12,7 @@ import {
 } from "react";
 import { fetchCloudAppData, putCloudAppData } from "@/lib/cloudSyncClient";
 import { SAMPLE_CARDS_TEST2, SAMPLE_TEST2_SEED_KEY } from "@/lib/sampleCardsTest2";
-import type { AppData, Deck, Flashcard, Grade, StudySpacingSettings } from "@/lib/types";
+import type { AppData, CardSchedule, Deck, Flashcard, Grade, StudySpacingSettings } from "@/lib/types";
 import {
   emptyAppData,
   loadAppDataForUser,
@@ -42,7 +42,14 @@ type Ctx = {
   updateStudySpacing: (s: StudySpacingSettings) => void;
   appendStudySessionSeen: (deckId: string, cardId: string) => void;
   clearStudySessionSeen: (deckId: string) => void;
-  recordCardStudyGrade: (deckId: string, cardId: string, grade: Grade) => void;
+  recordCardStudyResult: (
+    deckId: string,
+    cardId: string,
+    grade: Grade,
+    nextSchedule: CardSchedule,
+  ) => void;
+  /** Clears session seen, last grades, and per-card schedules (full deck reset). */
+  resetDeckProgress: (deckId: string) => void;
 };
 
 const DecksContext = createContext<Ctx | null>(null);
@@ -238,12 +245,15 @@ export function DecksProvider({
           const nextSeen = (x.studySessionSeenIds ?? []).filter((id) => id !== cardId);
           const nextGrades = { ...x.cardLastStudyGrade };
           delete nextGrades[cardId];
+          const nextSched = { ...(x.cardSchedule ?? {}) };
+          delete nextSched[cardId];
           return {
             ...x,
             updatedAt: t,
             cards: x.cards.filter((c) => c.id !== cardId),
             studySessionSeenIds: nextSeen.length ? nextSeen : undefined,
             cardLastStudyGrade: Object.keys(nextGrades).length ? nextGrades : undefined,
+            cardSchedule: Object.keys(nextSched).length ? nextSched : undefined,
           };
         }),
       }));
@@ -347,19 +357,43 @@ export function DecksProvider({
     [setData],
   );
 
-  const recordCardStudyGrade = useCallback(
-    (deckId: string, cardId: string, grade: Grade) => {
+  const recordCardStudyResult = useCallback(
+    (deckId: string, cardId: string, grade: Grade, nextSchedule: CardSchedule) => {
       setData((d) => ({
         ...d,
         decks: d.decks.map((x) => {
           if (x.id !== deckId) return x;
           if (!x.cards.some((c) => c.id === cardId)) return x;
+          const base = { ...(x.cardSchedule ?? {}) };
+          base[cardId] = nextSchedule;
           return {
             ...x,
             updatedAt: Date.now(),
             cardLastStudyGrade: { ...x.cardLastStudyGrade, [cardId]: grade },
+            cardSchedule: base,
           };
         }),
+      }));
+    },
+    [setData],
+  );
+
+  const resetDeckProgress = useCallback(
+    (deckId: string) => {
+      const t = Date.now();
+      setData((d) => ({
+        ...d,
+        decks: d.decks.map((x) =>
+          x.id === deckId
+            ? {
+                ...x,
+                updatedAt: t,
+                studySessionSeenIds: undefined,
+                cardLastStudyGrade: undefined,
+                cardSchedule: undefined,
+              }
+            : x,
+        ),
       }));
     },
     [setData],
@@ -407,7 +441,8 @@ export function DecksProvider({
       updateStudySpacing,
       appendStudySessionSeen,
       clearStudySessionSeen,
-      recordCardStudyGrade,
+      recordCardStudyResult,
+      resetDeckProgress,
     }),
     [
       data,
@@ -425,7 +460,8 @@ export function DecksProvider({
       updateStudySpacing,
       appendStudySessionSeen,
       clearStudySessionSeen,
-      recordCardStudyGrade,
+      recordCardStudyResult,
+      resetDeckProgress,
     ],
   );
 
