@@ -56,10 +56,12 @@ const DecksContext = createContext<Ctx | null>(null);
 
 export function DecksProvider({
   userId,
+  username,
   sessionToken,
   children,
 }: {
   userId: string;
+  username: string;
   sessionToken: string;
   children: React.ReactNode;
 }) {
@@ -99,9 +101,31 @@ export function DecksProvider({
 
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
-    setDataState(loadAppDataForUser(userId));
+    // If the server KV is ephemeral and the user gets re-created, the userId can change.
+    // Attempt a best-effort local migration of browser-cached decks for the same username.
+    const uname = (username ?? "").trim().toLowerCase();
+    const mapKey = uname ? `card-flipper-v1:lastUserId:${uname}` : "";
+    let next = loadAppDataForUser(userId);
+    if (uname && (next.decks?.length ?? 0) === 0) {
+      const prevUserId = localStorage.getItem(mapKey) ?? "";
+      if (prevUserId && prevUserId !== userId) {
+        const prev = loadAppDataForUser(prevUserId);
+        if ((prev.decks?.length ?? 0) > 0) {
+          next = prev;
+          saveAppDataForUser(userId, next);
+        }
+      }
+    }
+    if (uname) {
+      try {
+        localStorage.setItem(mapKey, userId);
+      } catch {
+        /* ignore */
+      }
+    }
+    setDataState(next);
     localDirtyRef.current = false;
-  }, [userId]);
+  }, [userId, username]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !sessionToken) {

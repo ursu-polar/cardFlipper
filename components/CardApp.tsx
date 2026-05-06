@@ -118,6 +118,7 @@ export function CardApp() {
     clearStudySessionSeen,
     recordCardStudyResult,
     resetDeckProgress,
+    cloudSyncEnabled,
   } = useDecks();
   const { user, sessionToken, logout } = useAuth();
   const [view, setView] = useState<View>({ name: "decks" });
@@ -294,7 +295,9 @@ export function CardApp() {
       <header className="mb-10 text-center">
         <h1 className="text-4xl font-extrabold tracking-tight text-slate-100 sm:text-5xl">Card Flipper</h1>
         <p className="mt-3 text-pretty text-base text-slate-300">
-          Your decks are saved to the server and cached in this browser.
+          {cloudSyncEnabled
+            ? "Your decks are saved to the server and cached in this browser."
+            : "Your decks are saved in this browser. Enable server sync by configuring Upstash Redis."}
         </p>
         <p className="mt-2 text-xs text-slate-400">
           Reorder decks and cards by dragging a row (the ⠿ icon marks draggable rows).

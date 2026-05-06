@@ -1,9 +1,12 @@
 "use client";
 
 import { useAuth } from "@/components/AuthContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Mode = "login" | "register";
+
+type MetaOk = { ok: true; kv: { kind: "upstash" | "memory"; source?: string } };
+type Meta = MetaOk | { ok: false };
 
 export function LoginPanel() {
   const { login, register, serverUnavailable } = useAuth();
@@ -12,6 +15,24 @@ export function LoginPanel() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [kvKind, setKvKind] = useState<"upstash" | "memory" | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/meta", { cache: "no-store" });
+        const j = (await res.json().catch(() => null)) as Meta | null;
+        const kind = j && j.ok === true ? (j as MetaOk).kv.kind : null;
+        if (!cancelled) setKvKind(kind ?? null);
+      } catch {
+        if (!cancelled) setKvKind(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -47,6 +68,16 @@ export function LoginPanel() {
         Card Flipper
       </h1>
       <p className="mb-6 text-center text-sm text-slate-400">Sign in or create an account</p>
+      {kvKind === "memory" && (
+        <div className="mb-4 rounded-2xl border border-amber-600/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100 ring-1 ring-inset ring-amber-500/10">
+          <p className="font-semibold">Server storage is not configured.</p>
+          <p className="mt-1 text-amber-100/90">
+            New users and server-saved decks can disappear after a server restart. To fix, add Upstash
+            Redis on Vercel and set <code className="rounded bg-slate-900/60 px-1">UPSTASH_REDIS_REST_URL</code>{" "}
+            and <code className="rounded bg-slate-900/60 px-1">UPSTASH_REDIS_REST_TOKEN</code>, then redeploy.
+          </p>
+        </div>
+      )}
       <div className="mb-4 flex rounded-full border border-slate-600/80 bg-slate-800/50 p-1">
         <button
           type="button"

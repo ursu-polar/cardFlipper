@@ -18,7 +18,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <DecksProvider key={user.id} userId={user.id} sessionToken={sessionToken}>
+    <DecksProvider key={user.id} userId={user.id} username={user.username} sessionToken={sessionToken}>
       {children}
     </DecksProvider>
   );

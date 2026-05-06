@@ -10,6 +10,10 @@ export type AppKv = {
   del: (key: string) => Promise<unknown>;
 };
 
+export type KvRuntimeInfo =
+  | { kind: "upstash"; source: string }
+  | { kind: "memory"; source: "memory" };
+
 let memoryFallbackWarned = false;
 
 let memorySingleton: AppKv | null = null;
@@ -66,6 +70,14 @@ export function resolveUpstashEnv(): { url: string; token: string; source: strin
 }
 
 let cached: AppKv | null | undefined;
+let cachedInfo: KvRuntimeInfo | null = null;
+
+export function getKvRuntimeInfo(): KvRuntimeInfo {
+  // Ensure getAppKv() has run at least once so `cachedInfo` is set.
+  if (cachedInfo) return cachedInfo;
+  void getAppKv();
+  return cachedInfo ?? { kind: "memory", source: "memory" };
+}
 
 /**
  * Returns a working KV: Upstash if configured, otherwise a shared in-memory store.
@@ -89,6 +101,7 @@ export function getAppKv(): AppKv {
             : (redis.set(k, v) as Promise<unknown>),
         del: (k) => redis.del(k) as Promise<unknown>,
       };
+      cachedInfo = { kind: "upstash", source: up.source };
       return cached;
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
@@ -99,6 +112,7 @@ export function getAppKv(): AppKv {
 
   if (!memorySingleton) memorySingleton = createMemoryKv();
   cached = memorySingleton;
+  cachedInfo = { kind: "memory", source: "memory" };
   if (!memoryFallbackWarned) {
     memoryFallbackWarned = true;
     console.warn(
